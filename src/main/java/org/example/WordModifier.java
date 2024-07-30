@@ -8517,6 +8517,46 @@ public class WordModifier {
         loadConfigFile(CONFIG_FILE);
     }
 
+    private static void saveEquivalentKeysFile(String equivalentKeysFile) {
+        try (FileOutputStream fos = new FileOutputStream(equivalentKeysFile);
+             XWPFDocument doc = new XWPFDocument()) {
+
+            XWPFTable table = doc.createTable();
+            for (Map.Entry<String, List<String>> entry : aliasToKeysMap.entrySet()) {
+                XWPFTableRow row = table.createRow();
+                XWPFTableCell aliasCell = row.addNewTableCell();
+                aliasCell.setText(entry.getKey());
+                for (String key : entry.getValue()) {
+                    XWPFTableCell keyCell = row.addNewTableCell();
+                    keyCell.setText(key);
+                }
+                XWPFTableCell valueCell = row.addNewTableCell();
+                valueCell.setText(aliasToValueMap.get(entry.getKey()));
+            }
+            doc.write(fos);
+        } catch (IOException e) {
+            System.err.println("An error occurred while saving the equivalent keys file: " + e.getMessage());
+        }
+    }
+
+    private static void refreshUI() {
+        aliasTableModel.setRowCount(0);
+        for (Map.Entry<String, List<String>> entry : aliasToKeysMap.entrySet()) {
+            aliasTableModel.addRow(new Object[]{entry.getKey(), aliasToValueMap.get(entry.getKey())});
+        }
+        aliasComboBox.removeAllItems();
+        for (String alias : aliasToKeysMap.keySet()) {
+            aliasComboBox.addItem(alias);
+        }
+        wordPreviewTextArea.setText("");
+    }
+
+    private static void updateAliasAndSaveFiles() {
+        mergeEquivalentKeysToConfig();
+        saveConfigFile(CONFIG_FILE, configMap);
+        saveEquivalentKeysFile(EQUIVALENT_KEYS_FILE);
+        refreshUI();
+    }
     private static void loadEquivalentKeysFile(String equivalentKeysFile) {
         try (FileInputStream fis = new FileInputStream(equivalentKeysFile);
              XWPFDocument doc = new XWPFDocument(fis)) {
@@ -8625,31 +8665,47 @@ public class WordModifier {
             StringBuilder modifiedContent = new StringBuilder();
 
             List<XWPFTable> tables = document.getTables();
-
             for (XWPFTable table : tables) {
+                boolean isTableEmpty = true; // 标记表格是否为空
                 for (XWPFTableRow row : table.getRows()) {
                     for (int i = 0; i < row.getTableCells().size(); i++) {
-                        XWPFTableCell cell = row.getTableCells().get(i);
+                        XWPFTableCell cell = row.getCell(i); // 使用 getCell 方法避免超出列数
                         String text = cell.getText().replaceAll("\\s+", "");
                         originalContent.append(text).append(" ");
+
+                        if (!text.isEmpty()) {
+                            isTableEmpty = false; // 该表格有内容
+                        }
 
                         if (configMap.containsKey(text)) {
                             String newValue = configMap.get(text);
                             modifiedContent.append(newValue).append(" ");
-                            if (i + 1 < row.getTableCells().size() && newValue != null && !newValue.isEmpty()) {
-                                XWPFTableCell nextCell = row.getTableCells().get(i + 1);
-                                nextCell.removeParagraph(0);
-                                XWPFParagraph p = nextCell.addParagraph();
-                                p.setAlignment(ParagraphAlignment.CENTER);
+
+                            if (newValue != null && !newValue.isEmpty()) {
+                                cell.removeParagraph(0); // 移除现有段落
+                                XWPFParagraph p = cell.addParagraph();
+                                p.setAlignment(cell.getParagraphs().get(0).getAlignment()); // 保留对齐方式
                                 XWPFRun r = p.createRun();
                                 r.setText(newValue);
-                                nextCell.setVerticalAlignment(XWPFTableCell.XWPFVertAlign.CENTER);
+                                r.setFontFamily(cell.getParagraphs().get(0).getRuns().get(0).getFontFamily()); // 保留字体
+                                r.setFontSize(cell.getParagraphs().get(0).getRuns().get(0).getFontSize()); // 保留字体大小
+                                cell.setVerticalAlignment(XWPFTableCell.XWPFVertAlign.CENTER); // 保持垂直居中
                             }
+                        }
+                    }
+                }
+
+                // 如果表格为空，则保留表格的结构
+                if (isTableEmpty) {
+                    for (XWPFTableRow row : table.getRows()) {
+                        for (XWPFTableCell cell : row.getTableCells()) {
+                            cell.setText(""); // 保留单元格但不设置内容
                         }
                     }
                 }
             }
 
+            // 保留段落样式
             for (XWPFParagraph paragraph : document.getParagraphs()) {
                 List<XWPFRun> runs = paragraph.getRuns();
                 for (int i = 0; i < runs.size(); i++) {
@@ -8661,29 +8717,17 @@ public class WordModifier {
                             String key = entry.getKey();
                             String value = entry.getValue();
                             if (text.trim().equals(key)) {
-                                int j = i + 1;
-                                while (j < runs.size()) {
-                                    XWPFRun nextRun = runs.get(j);
-                                    String nextText = nextRun.getText(0);
-                                    if (nextText != null && !nextText.contains(":")) {
-                                        XWPFRun newRun = paragraph.insertNewRun(j + 1);
-                                        newRun.setText(value);
-                                        newRun.setUnderline(UnderlinePatterns.SINGLE);
-                                        newRun.setFontFamily("仿宋_GB2312");
-                                        newRun.setFontSize(14);
-                                        paragraph.removeRun(j);
-                                        break;
-                                    }
-                                    j++;
-                                }
-                                i = j;
-                                break;
+                                // 处理段落中的替换
+                                run.setText(value, 0); // 直接替换文字内容
+                                modifiedContent.append(value).append(" ");
+                                break; // 继续处理下一段文字
                             }
                         }
                     }
                 }
             }
 
+            // 将文件信息添加到表格模型中
             fileTableModel.addRow(new Object[]{sourceFile, originalContent.toString(), modifiedContent.toString()});
             document.write(fos);
 
@@ -8691,6 +8735,8 @@ public class WordModifier {
             displayWordContent(outputFile);
         }
     }
+
+
 
     private static void updateProgress(int processedFiles, int totalFiles) {
         int progress = (int) ((processedFiles / (double) totalFiles) * 100);
@@ -8709,7 +8755,7 @@ public class WordModifier {
         JPanel aliasPanel = new JPanel(new BorderLayout());
         aliasPanel.setBorder(BorderFactory.createTitledBorder("别名映射"));
         aliasTable = new JTable(aliasTableModel);
-        aliasTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION); // 设置为单选
+        aliasTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         aliasTable.getSelectionModel().addListSelectionListener(new ListSelectionListener() {
             @Override
             public void valueChanged(ListSelectionEvent e) {
@@ -8724,12 +8770,12 @@ public class WordModifier {
 
         JPanel aliasInputPanel = new JPanel(new GridLayout(1, 4));
         aliasInputPanel.add(new JLabel("Alias:"));
-        aliasComboBox = new JComboBox<>(); // 别名选择下拉框
+        aliasComboBox = new JComboBox<>();
         aliasInputPanel.add(aliasComboBox);
         aliasInputPanel.add(new JLabel("Value:"));
         JTextField aliasValueField = new JTextField();
         aliasInputPanel.add(aliasValueField);
-        JButton updateAliasButton = new JButton("更新"); // 更新按钮
+        JButton updateAliasButton = new JButton("更新");
         updateAliasButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -8741,17 +8787,8 @@ public class WordModifier {
                     if (selectedRow != -1) {
                         aliasTableModel.setValueAt(newValue, selectedRow, 1);
                     }
-                    mergeEquivalentKeysToConfig();
-                    saveConfigFile(CONFIG_FILE, configMap); // 保存配置文件
+                    updateAliasAndSaveFiles();
                 }
-            }
-        });
-
-        JButton executeButton = new JButton("执行"); // 执行按钮
-        executeButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                processFiles(); // 处理文件
             }
         });
 
@@ -8759,7 +8796,17 @@ public class WordModifier {
 
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         buttonPanel.add(updateAliasButton);
-        buttonPanel.add(executeButton);
+
+        // 添加执行按钮
+        JButton executeButton = new JButton("执行");
+        executeButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                processFiles(); // 调用处理文件的方法
+            }
+        });
+        buttonPanel.add(executeButton); // 添加执行按钮到按钮面板
+
         aliasPanel.add(buttonPanel, BorderLayout.SOUTH);
 
         JPanel filePreviewPanel = new JPanel(new BorderLayout());
@@ -8775,8 +8822,22 @@ public class WordModifier {
         panel.add(filePreviewPanel, BorderLayout.CENTER);
         panel.add(progressPanel, BorderLayout.SOUTH);
 
+        JPanel filePanel = new JPanel(new BorderLayout());
+        filePanel.setBorder(BorderFactory.createTitledBorder("文件列表"));
+        JList<File> fileList = new JList<>();
+        fileList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        fileList.addListSelectionListener(e -> {
+            File selectedFile = fileList.getSelectedValue();
+            if (selectedFile != null) {
+                displayWordContent(selectedFile.getAbsolutePath());
+            }
+        });
+        filePanel.add(new JScrollPane(fileList), BorderLayout.CENTER);
+        panel.add(filePanel, BorderLayout.WEST);
+
         return frame;
     }
+
 
     private static void displayWordContent(String filePath) {
         try (FileInputStream fis = new FileInputStream(filePath);
