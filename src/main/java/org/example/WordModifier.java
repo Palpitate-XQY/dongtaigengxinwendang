@@ -6585,399 +6585,399 @@
 ////
 ////
 ////
-
-package org.example;
-
-import com.aspose.words.SaveFormat;
-import org.apache.poi.xwpf.usermodel.*;
-
-import javax.swing.*;
-import javax.swing.event.ListSelectionEvent;
-import javax.swing.event.ListSelectionListener;
-import javax.swing.table.DefaultTableModel;
-import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.util.*;
-import java.util.List;
-
-public class WordModifier {
-    private static Map<String, String> configMap = new LinkedHashMap<>();
-
-    private static Map<String, List<String>> aliasToKeysMap = new LinkedHashMap<>();
-    private static Map<String, String> aliasToValueMap = new LinkedHashMap<>();
-
-
-    private static DefaultTableModel configTableModel = new DefaultTableModel(new Object[]{"Key", "Value"}, 0);
-    private static DefaultTableModel fileTableModel = new DefaultTableModel(new Object[]{"File", "Original Content", "Modified Content"}, 0);
-    private static JProgressBar progressBar = new JProgressBar(0, 100);
-    private static JFrame frame;
-    private static JComboBox<String> keyComboBox = new JComboBox<>();
-    private static JTextField valueField = new JTextField();
-    private static JTable configTable;
-    private static JTable fileTable;
-    private static JTextArea statsTextArea = new JTextArea();
-    private static final String CONFIG_FILE = "Z:\\Desktop\\测试\\模板\\模板.docx";
-
-    public static void main(String[] args) {
-        // 创建并显示主窗口
-        frame = createMainFrame();
-        frame.setVisible(true);
-
-        // 加载配置文件
-        loadConfigFile(CONFIG_FILE);
-    }
-
-    private static void loadEquivalentKeysFile(String equivalentKeysFile) {
-        try (FileInputStream fis = new FileInputStream(equivalentKeysFile);
-             XWPFDocument doc = new XWPFDocument(fis)) {
-
-            List<XWPFTable> tables = doc.getTables();
-            for (XWPFTable table : tables) {
-                for (XWPFTableRow row : table.getRows()) {
-                    List<XWPFTableCell> cells = row.getTableCells();
-                    if (cells.size() >= 5) {
-                        String alias = cells.get(0).getText().trim();
-                        List<String> keys = new ArrayList<>();
-                        for (int i = 1; i < cells.size() - 1; i++) {
-                            String key = cells.get(i).getText().trim();
-                            if (!key.isEmpty() && !key.equals("-")) {
-                                keys.add(key);
-                            }
-                        }
-                        // Skip this row if no keys were found
-                        if (keys.isEmpty()) {
-                            continue;
-                        }
-                        String value = cells.get(cells.size() - 1).getText().trim();
-                        aliasToKeysMap.put(alias, keys);
-                        aliasToValueMap.put(alias, value);
-                    }
-                }
-            }
-        } catch (IOException e) {
-            System.err.println("An error occurred while loading the equivalent keys file: " + e.getMessage());
-        }
-    }
-
-
-    private static void loadConfigFile(String configFile) {
-        try (FileInputStream configFis = new FileInputStream(configFile);
-             XWPFDocument configDoc = new XWPFDocument(configFis)) {
-
-            List<XWPFTable> configTables = configDoc.getTables();
-
-            for (XWPFTable table : configTables) {
-                for (XWPFTableRow row : table.getRows()) {
-                    if (row.getTableCells().size() >= 2) {
-                        XWPFTableCell labelCell = row.getTableCells().get(0);
-                        XWPFTableCell valueCell = row.getTableCells().get(1);
-                        String key = labelCell.getText().trim();
-                        String value = valueCell.getText().trim();
-                        configMap.put(key, value);
-                        configTableModel.addRow(new Object[]{key, value});
-                        keyComboBox.addItem(key);
-                    }
-                }
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        // After loading the original config file, load the equivalent keys file
-        loadEquivalentKeysFile("Z:\\Desktop\\测试\\模板\\模板2.docx");
-
-        // Merge the equivalent keys into the original config
-        mergeEquivalentKeysToConfig();
-    }
-    private static void mergeEquivalentKeysToConfig() {
-        for (Map.Entry<String, List<String>> entry : aliasToKeysMap.entrySet()) {
-            String alias = entry.getKey();
-            String value = aliasToValueMap.get(alias);
-            for (String key : entry.getValue()) {
-                configMap.put(key, value);
-                updateConfigTableModel(key, value);
-            }
-        }
-    }
-    private static void updateConfigTableModel(String key, String value) {
-        boolean keyExists = false;
-        for (int i = 0; i < configTableModel.getRowCount(); i++) {
-            if (configTableModel.getValueAt(i, 0).equals(key)) {
-                configTableModel.setValueAt(value, i, 1);
-                keyExists = true;
-                break;
-            }
-        }
-        if (!keyExists) {
-            configTableModel.addRow(new Object[]{key, value});
-        }
-    }
-
-
-    private static void saveConfigFile(String configFile, Map<String, String> configMap) {
-        try (FileOutputStream fos = new FileOutputStream(configFile);
-             XWPFDocument configDoc = new XWPFDocument()) {
-
-            XWPFTable table = configDoc.createTable();
-            for (Map.Entry<String, String> entry : configMap.entrySet()) {
-                XWPFTableRow row = table.createRow();
-                XWPFTableCell keyCell = row.addNewTableCell();
-                keyCell.setText(entry.getKey());
-
-                XWPFTableCell valueCell = row.addNewTableCell();
-                valueCell.setText(entry.getValue());
-            }
-            configDoc.write(fos);
-        } catch (IOException e) {
-            System.err.println("An error occurred while saving the config file: " + e.getMessage());
-        }
-    }
-
-
-    private static String convertDocToDocx(String sourceFile) {
-        String docxFile = sourceFile.replace(".doc", ".docx");
-        try {
-            com.aspose.words.Document doc = new com.aspose.words.Document(sourceFile);
-            doc.save(docxFile, SaveFormat.DOCX);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        return docxFile;
-    }
-
-    private static void modifyDocument(String sourceFile, String outputFile) throws IOException {
-        try (FileInputStream sourceFis = new FileInputStream(sourceFile);
-             FileOutputStream fos = new FileOutputStream(outputFile);
-             XWPFDocument document = new XWPFDocument(sourceFis)) {
-
-            StringBuilder originalContent = new StringBuilder();
-            StringBuilder modifiedContent = new StringBuilder();
-
-            List<XWPFTable> tables = document.getTables();
-
-            for (XWPFTable table : tables) {
-                for (XWPFTableRow row : table.getRows()) {
-                    for (int i = 0; i < row.getTableCells().size(); i++) {
-                        XWPFTableCell cell = row.getTableCells().get(i);
-                        String text = cell.getText().replaceAll("\\s+", "");
-                        originalContent.append(text).append(" ");
-
-                        if (configMap.containsKey(text)) {
-                            String newValue = configMap.get(text);
-                            modifiedContent.append(newValue).append(" ");
-                            if (i + 1 < row.getTableCells().size() && newValue != null && !newValue.isEmpty()) {
-                                XWPFTableCell nextCell = row.getTableCells().get(i + 1);
-                                nextCell.removeParagraph(0);
-                                XWPFParagraph p = nextCell.addParagraph();
-                                p.setAlignment(ParagraphAlignment.CENTER);
-                                XWPFRun r = p.createRun();
-                                r.setText(newValue);
-                                nextCell.setVerticalAlignment(XWPFTableCell.XWPFVertAlign.CENTER);
-                            }
-                        }
-                    }
-                }
-            }
-
-            for (XWPFParagraph paragraph : document.getParagraphs()) {
-                List<XWPFRun> runs = paragraph.getRuns();
-                for (int i = 0; i < runs.size(); i++) {
-                    XWPFRun run = runs.get(i);
-                    String text = run.getText(0);
-                    if (text != null) {
-                        originalContent.append(text).append(" ");
-                        for (Map.Entry<String, String> entry : configMap.entrySet()) {
-                            String key = entry.getKey();
-                            String value = entry.getValue();
-                            if (text.trim().equals(key)) {
-                                int j = i + 1;
-                                while (j < runs.size()) {
-                                    XWPFRun nextRun = runs.get(j);
-                                    String nextText = nextRun.getText(0);
-                                    if (nextText != null && !nextText.contains(":")) {
-                                        XWPFRun newRun = paragraph.insertNewRun(j + 1);
-                                        newRun.setText(value);
-                                        newRun.setUnderline(UnderlinePatterns.SINGLE);
-                                        newRun.setFontFamily("仿宋_GB2312");
-                                        newRun.setFontSize(14);
-                                        paragraph.removeRun(j);
-                                        break;
-                                    }
-                                    j++;
-                                }
-                                i = j;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            fileTableModel.addRow(new Object[]{sourceFile, originalContent.toString(), modifiedContent.toString()});
-            document.write(fos);
-        }
-    }
-
-    private static void updateProgress(int processedFiles, int totalFiles) {
-        int progress = (int) ((double) processedFiles / totalFiles * 100);
-        progressBar.setValue(progress);
-    }
-
-    private static JFrame createMainFrame() {
-        JFrame frame = new JFrame("文档处理工具");
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(1200, 800);
-
-        JPanel panel = new JPanel(new BorderLayout());
-        frame.add(panel);
-
-        JPanel configPanel = new JPanel(new BorderLayout());
-        configPanel.setBorder(BorderFactory.createTitledBorder("配置文件映射"));
-        configTable = new JTable(configTableModel);
-        configPanel.add(new JScrollPane(configTable), BorderLayout.CENTER);
-
-        JPanel configInputPanel = new JPanel(new GridLayout(1, 4));
-        configInputPanel.add(new JLabel("Key:"));
-        configInputPanel.add(keyComboBox);
-        configInputPanel.add(new JLabel("Value:"));
-        configInputPanel.add(valueField);
-
-        JButton addButton = new JButton("添加/更新");
-        addButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                String key = (String) keyComboBox.getSelectedItem();
-                String value = valueField.getText().trim();
-                if (key != null && !key.isEmpty() && !value.isEmpty()) {
-                    configMap.put(key, value);
-                    boolean keyExists = false;
-                    for (int i = 0; i < configTableModel.getRowCount(); i++) {
-                        if (configTableModel.getValueAt(i, 0).equals(key)) {
-                            configTableModel.setValueAt(value, i, 1);
-                            keyExists = true;
-                            break;
-                        }
-                    }
-                    if (!keyExists) {
-                        configTableModel.addRow(new Object[]{key, value});
-                        keyComboBox.addItem(key);
-                    }
-                    saveConfigFile(CONFIG_FILE, configMap);
-                }
-            }
-        });
-        configInputPanel.add(addButton);
-
-        configPanel.add(configInputPanel, BorderLayout.SOUTH);
-
-        JPanel filePanel = new JPanel(new BorderLayout());
-        filePanel.setBorder(BorderFactory.createTitledBorder("文件处理结果预览"));
-        fileTable = new JTable(fileTableModel);
-        fileTable.getSelectionModel().addListSelectionListener(new ListSelectionListener() {
-            @Override
-            public void valueChanged(ListSelectionEvent event) {
-                if (!event.getValueIsAdjusting()) {
-                    int selectedRow = fileTable.getSelectedRow();
-                    if (selectedRow != -1) {
-                        String fileName = (String) fileTableModel.getValueAt(selectedRow, 0);
-                        String originalContent = (String) fileTableModel.getValueAt(selectedRow, 1);
-                        String modifiedContent = (String) fileTableModel.getValueAt(selectedRow, 2);
-                        displayFilePreview(fileName, originalContent, modifiedContent);
-                    }
-                }
-            }
-        });
-        filePanel.add(new JScrollPane(fileTable), BorderLayout.CENTER);
-
-        JButton refreshButton = new JButton("刷新预览");
-        refreshButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                fileTableModel.setRowCount(0);
-                processFiles();
-            }
-        });
-        filePanel.add(refreshButton, BorderLayout.SOUTH);
-
-        JPanel progressPanel = new JPanel(new BorderLayout());
-        progressPanel.setBorder(BorderFactory.createTitledBorder("处理进度"));
-        progressPanel.add(progressBar, BorderLayout.CENTER);
-
-        JButton startButton = new JButton("开始执行");
-        startButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                processFiles();
-                JOptionPane.showMessageDialog(frame, "处理完成！", "提示", JOptionPane.INFORMATION_MESSAGE);
-            }
-        });
-        progressPanel.add(startButton, BorderLayout.SOUTH);
-
-        JPanel statsPanel = new JPanel(new BorderLayout());
-        statsPanel.setBorder(BorderFactory.createTitledBorder("统计分析"));
-        statsTextArea.setEditable(false);
-        statsPanel.add(new JScrollPane(statsTextArea), BorderLayout.CENTER);
-
-        panel.add(configPanel, BorderLayout.NORTH);
-        panel.add(filePanel, BorderLayout.CENTER);
-        panel.add(progressPanel, BorderLayout.SOUTH);
-        panel.add(statsPanel, BorderLayout.EAST);
-
-        return frame;
-    }
-
-    private static void displayFilePreview(String fileName, String originalContent, String modifiedContent) {
-        JFrame previewFrame = new JFrame("文件预览 - " + fileName);
-        previewFrame.setSize(600, 400);
-        JTextArea previewTextArea = new JTextArea();
-        previewTextArea.setEditable(false);
-        previewTextArea.setText("原始内容:\n" + originalContent + "\n\n修改后内容:\n" + modifiedContent);
-        previewFrame.add(new JScrollPane(previewTextArea));
-        previewFrame.setVisible(true);
-    }
-
-    private static void processFiles() {
-        File folder = new File("Z:\\Desktop\\测试\\in");
-        File[] listOfFiles = folder.listFiles();
-        if (listOfFiles == null) {
-            return;
-        }
-        int totalFiles = listOfFiles.length;
-        int processedFiles = 0;
-        long startTime = System.currentTimeMillis();
-        for (File file : listOfFiles) {
-            if (file.isFile()) {
-                String sourceFile = file.getAbsolutePath();
-                String outputFile = "Z:\\Desktop\\测试\\out\\modified_" + file.getName();
-                if (sourceFile.endsWith(".doc")) {
-                    sourceFile = convertDocToDocx(sourceFile);
-                }
-                if (!sourceFile.endsWith(".docx")) {
-                    continue;
-                }
-                try {
-                    modifyDocument(sourceFile, outputFile);
-                    processedFiles++;
-                    updateProgress(processedFiles, totalFiles);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-        long endTime = System.currentTimeMillis();
-        long duration = endTime - startTime;
-        displayStats(totalFiles, processedFiles, duration);
-    }
-
-    private static void displayStats(int totalFiles, int processedFiles, long duration) {
-        String stats = "总文件数: " + totalFiles + "\n已处理文件数: " + processedFiles + "\n处理时间: " + duration + " 毫秒\n";
-        statsTextArea.setText(stats);
-    }
-}
+//
+//package org.example;
+//
+//import com.aspose.words.SaveFormat;
+//import org.apache.poi.xwpf.usermodel.*;
+//
+//import javax.swing.*;
+//import javax.swing.event.ListSelectionEvent;
+//import javax.swing.event.ListSelectionListener;
+//import javax.swing.table.DefaultTableModel;
+//import java.awt.*;
+//import java.awt.event.ActionEvent;
+//import java.awt.event.ActionListener;
+//import java.io.File;
+//import java.io.FileInputStream;
+//import java.io.FileOutputStream;
+//import java.io.IOException;
+//import java.util.*;
+//import java.util.List;
+//
+//public class WordModifier {
+//    private static Map<String, String> configMap = new LinkedHashMap<>();
+//
+//    private static Map<String, List<String>> aliasToKeysMap = new LinkedHashMap<>();
+//    private static Map<String, String> aliasToValueMap = new LinkedHashMap<>();
+//
+//
+//    private static DefaultTableModel configTableModel = new DefaultTableModel(new Object[]{"Key", "Value"}, 0);
+//    private static DefaultTableModel fileTableModel = new DefaultTableModel(new Object[]{"File", "Original Content", "Modified Content"}, 0);
+//    private static JProgressBar progressBar = new JProgressBar(0, 100);
+//    private static JFrame frame;
+//    private static JComboBox<String> keyComboBox = new JComboBox<>();
+//    private static JTextField valueField = new JTextField();
+//    private static JTable configTable;
+//    private static JTable fileTable;
+//    private static JTextArea statsTextArea = new JTextArea();
+//    private static final String CONFIG_FILE = "Z:\\Desktop\\测试\\模板\\模板.docx";
+//
+//    public static void main(String[] args) {
+//        // 创建并显示主窗口
+//        frame = createMainFrame();
+//        frame.setVisible(true);
+//
+//        // 加载配置文件
+//        loadConfigFile(CONFIG_FILE);
+//    }
+//
+//    private static void loadEquivalentKeysFile(String equivalentKeysFile) {
+//        try (FileInputStream fis = new FileInputStream(equivalentKeysFile);
+//             XWPFDocument doc = new XWPFDocument(fis)) {
+//
+//            List<XWPFTable> tables = doc.getTables();
+//            for (XWPFTable table : tables) {
+//                for (XWPFTableRow row : table.getRows()) {
+//                    List<XWPFTableCell> cells = row.getTableCells();
+//                    if (cells.size() >= 5) {
+//                        String alias = cells.get(0).getText().trim();
+//                        List<String> keys = new ArrayList<>();
+//                        for (int i = 1; i < cells.size() - 1; i++) {
+//                            String key = cells.get(i).getText().trim();
+//                            if (!key.isEmpty() && !key.equals("-")) {
+//                                keys.add(key);
+//                            }
+//                        }
+//                        // Skip this row if no keys were found
+//                        if (keys.isEmpty()) {
+//                            continue;
+//                        }
+//                        String value = cells.get(cells.size() - 1).getText().trim();
+//                        aliasToKeysMap.put(alias, keys);
+//                        aliasToValueMap.put(alias, value);
+//                    }
+//                }
+//            }
+//        } catch (IOException e) {
+//            System.err.println("An error occurred while loading the equivalent keys file: " + e.getMessage());
+//        }
+//    }
+//
+//
+//    private static void loadConfigFile(String configFile) {
+//        try (FileInputStream configFis = new FileInputStream(configFile);
+//             XWPFDocument configDoc = new XWPFDocument(configFis)) {
+//
+//            List<XWPFTable> configTables = configDoc.getTables();
+//
+//            for (XWPFTable table : configTables) {
+//                for (XWPFTableRow row : table.getRows()) {
+//                    if (row.getTableCells().size() >= 2) {
+//                        XWPFTableCell labelCell = row.getTableCells().get(0);
+//                        XWPFTableCell valueCell = row.getTableCells().get(1);
+//                        String key = labelCell.getText().trim();
+//                        String value = valueCell.getText().trim();
+//                        configMap.put(key, value);
+//                        configTableModel.addRow(new Object[]{key, value});
+//                        keyComboBox.addItem(key);
+//                    }
+//                }
+//            }
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
+//        // After loading the original config file, load the equivalent keys file
+//        loadEquivalentKeysFile("Z:\\Desktop\\测试\\模板\\模板2.docx");
+//
+//        // Merge the equivalent keys into the original config
+//        mergeEquivalentKeysToConfig();
+//    }
+//    private static void mergeEquivalentKeysToConfig() {
+//        for (Map.Entry<String, List<String>> entry : aliasToKeysMap.entrySet()) {
+//            String alias = entry.getKey();
+//            String value = aliasToValueMap.get(alias);
+//            for (String key : entry.getValue()) {
+//                configMap.put(key, value);
+//                updateConfigTableModel(key, value);
+//            }
+//        }
+//    }
+//    private static void updateConfigTableModel(String key, String value) {
+//        boolean keyExists = false;
+//        for (int i = 0; i < configTableModel.getRowCount(); i++) {
+//            if (configTableModel.getValueAt(i, 0).equals(key)) {
+//                configTableModel.setValueAt(value, i, 1);
+//                keyExists = true;
+//                break;
+//            }
+//        }
+//        if (!keyExists) {
+//            configTableModel.addRow(new Object[]{key, value});
+//        }
+//    }
+//
+//
+//    private static void saveConfigFile(String configFile, Map<String, String> configMap) {
+//        try (FileOutputStream fos = new FileOutputStream(configFile);
+//             XWPFDocument configDoc = new XWPFDocument()) {
+//
+//            XWPFTable table = configDoc.createTable();
+//            for (Map.Entry<String, String> entry : configMap.entrySet()) {
+//                XWPFTableRow row = table.createRow();
+//                XWPFTableCell keyCell = row.addNewTableCell();
+//                keyCell.setText(entry.getKey());
+//
+//                XWPFTableCell valueCell = row.addNewTableCell();
+//                valueCell.setText(entry.getValue());
+//            }
+//            configDoc.write(fos);
+//        } catch (IOException e) {
+//            System.err.println("An error occurred while saving the config file: " + e.getMessage());
+//        }
+//    }
+//
+//
+//    private static String convertDocToDocx(String sourceFile) {
+//        String docxFile = sourceFile.replace(".doc", ".docx");
+//        try {
+//            com.aspose.words.Document doc = new com.aspose.words.Document(sourceFile);
+//            doc.save(docxFile, SaveFormat.DOCX);
+//        } catch (Exception e) {
+//            throw new RuntimeException(e);
+//        }
+//        return docxFile;
+//    }
+//
+//    private static void modifyDocument(String sourceFile, String outputFile) throws IOException {
+//        try (FileInputStream sourceFis = new FileInputStream(sourceFile);
+//             FileOutputStream fos = new FileOutputStream(outputFile);
+//             XWPFDocument document = new XWPFDocument(sourceFis)) {
+//
+//            StringBuilder originalContent = new StringBuilder();
+//            StringBuilder modifiedContent = new StringBuilder();
+//
+//            List<XWPFTable> tables = document.getTables();
+//
+//            for (XWPFTable table : tables) {
+//                for (XWPFTableRow row : table.getRows()) {
+//                    for (int i = 0; i < row.getTableCells().size(); i++) {
+//                        XWPFTableCell cell = row.getTableCells().get(i);
+//                        String text = cell.getText().replaceAll("\\s+", "");
+//                        originalContent.append(text).append(" ");
+//
+//                        if (configMap.containsKey(text)) {
+//                            String newValue = configMap.get(text);
+//                            modifiedContent.append(newValue).append(" ");
+//                            if (i + 1 < row.getTableCells().size() && newValue != null && !newValue.isEmpty()) {
+//                                XWPFTableCell nextCell = row.getTableCells().get(i + 1);
+//                                nextCell.removeParagraph(0);
+//                                XWPFParagraph p = nextCell.addParagraph();
+//                                p.setAlignment(ParagraphAlignment.CENTER);
+//                                XWPFRun r = p.createRun();
+//                                r.setText(newValue);
+//                                nextCell.setVerticalAlignment(XWPFTableCell.XWPFVertAlign.CENTER);
+//                            }
+//                        }
+//                    }
+//                }
+//            }
+//
+//            for (XWPFParagraph paragraph : document.getParagraphs()) {
+//                List<XWPFRun> runs = paragraph.getRuns();
+//                for (int i = 0; i < runs.size(); i++) {
+//                    XWPFRun run = runs.get(i);
+//                    String text = run.getText(0);
+//                    if (text != null) {
+//                        originalContent.append(text).append(" ");
+//                        for (Map.Entry<String, String> entry : configMap.entrySet()) {
+//                            String key = entry.getKey();
+//                            String value = entry.getValue();
+//                            if (text.trim().equals(key)) {
+//                                int j = i + 1;
+//                                while (j < runs.size()) {
+//                                    XWPFRun nextRun = runs.get(j);
+//                                    String nextText = nextRun.getText(0);
+//                                    if (nextText != null && !nextText.contains(":")) {
+//                                        XWPFRun newRun = paragraph.insertNewRun(j + 1);
+//                                        newRun.setText(value);
+//                                        newRun.setUnderline(UnderlinePatterns.SINGLE);
+//                                        newRun.setFontFamily("仿宋_GB2312");
+//                                        newRun.setFontSize(14);
+//                                        paragraph.removeRun(j);
+//                                        break;
+//                                    }
+//                                    j++;
+//                                }
+//                                i = j;
+//                                break;
+//                            }
+//                        }
+//                    }
+//                }
+//            }
+//
+//            fileTableModel.addRow(new Object[]{sourceFile, originalContent.toString(), modifiedContent.toString()});
+//            document.write(fos);
+//        }
+//    }
+//
+//    private static void updateProgress(int processedFiles, int totalFiles) {
+//        int progress = (int) ((double) processedFiles / totalFiles * 100);
+//        progressBar.setValue(progress);
+//    }
+//
+//    private static JFrame createMainFrame() {
+//        JFrame frame = new JFrame("文档处理工具");
+//        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+//        frame.setSize(1200, 800);
+//
+//        JPanel panel = new JPanel(new BorderLayout());
+//        frame.add(panel);
+//
+//        JPanel configPanel = new JPanel(new BorderLayout());
+//        configPanel.setBorder(BorderFactory.createTitledBorder("配置文件映射"));
+//        configTable = new JTable(configTableModel);
+//        configPanel.add(new JScrollPane(configTable), BorderLayout.CENTER);
+//
+//        JPanel configInputPanel = new JPanel(new GridLayout(1, 4));
+//        configInputPanel.add(new JLabel("Key:"));
+//        configInputPanel.add(keyComboBox);
+//        configInputPanel.add(new JLabel("Value:"));
+//        configInputPanel.add(valueField);
+//
+//        JButton addButton = new JButton("添加/更新");
+//        addButton.addActionListener(new ActionListener() {
+//            @Override
+//            public void actionPerformed(ActionEvent e) {
+//                String key = (String) keyComboBox.getSelectedItem();
+//                String value = valueField.getText().trim();
+//                if (key != null && !key.isEmpty() && !value.isEmpty()) {
+//                    configMap.put(key, value);
+//                    boolean keyExists = false;
+//                    for (int i = 0; i < configTableModel.getRowCount(); i++) {
+//                        if (configTableModel.getValueAt(i, 0).equals(key)) {
+//                            configTableModel.setValueAt(value, i, 1);
+//                            keyExists = true;
+//                            break;
+//                        }
+//                    }
+//                    if (!keyExists) {
+//                        configTableModel.addRow(new Object[]{key, value});
+//                        keyComboBox.addItem(key);
+//                    }
+//                    saveConfigFile(CONFIG_FILE, configMap);
+//                }
+//            }
+//        });
+//        configInputPanel.add(addButton);
+//
+//        configPanel.add(configInputPanel, BorderLayout.SOUTH);
+//
+//        JPanel filePanel = new JPanel(new BorderLayout());
+//        filePanel.setBorder(BorderFactory.createTitledBorder("文件处理结果预览"));
+//        fileTable = new JTable(fileTableModel);
+//        fileTable.getSelectionModel().addListSelectionListener(new ListSelectionListener() {
+//            @Override
+//            public void valueChanged(ListSelectionEvent event) {
+//                if (!event.getValueIsAdjusting()) {
+//                    int selectedRow = fileTable.getSelectedRow();
+//                    if (selectedRow != -1) {
+//                        String fileName = (String) fileTableModel.getValueAt(selectedRow, 0);
+//                        String originalContent = (String) fileTableModel.getValueAt(selectedRow, 1);
+//                        String modifiedContent = (String) fileTableModel.getValueAt(selectedRow, 2);
+//                        displayFilePreview(fileName, originalContent, modifiedContent);
+//                    }
+//                }
+//            }
+//        });
+//        filePanel.add(new JScrollPane(fileTable), BorderLayout.CENTER);
+//
+//        JButton refreshButton = new JButton("刷新预览");
+//        refreshButton.addActionListener(new ActionListener() {
+//            @Override
+//            public void actionPerformed(ActionEvent e) {
+//                fileTableModel.setRowCount(0);
+//                processFiles();
+//            }
+//        });
+//        filePanel.add(refreshButton, BorderLayout.SOUTH);
+//
+//        JPanel progressPanel = new JPanel(new BorderLayout());
+//        progressPanel.setBorder(BorderFactory.createTitledBorder("处理进度"));
+//        progressPanel.add(progressBar, BorderLayout.CENTER);
+//
+//        JButton startButton = new JButton("开始执行");
+//        startButton.addActionListener(new ActionListener() {
+//            @Override
+//            public void actionPerformed(ActionEvent e) {
+//                processFiles();
+//                JOptionPane.showMessageDialog(frame, "处理完成！", "提示", JOptionPane.INFORMATION_MESSAGE);
+//            }
+//        });
+//        progressPanel.add(startButton, BorderLayout.SOUTH);
+//
+//        JPanel statsPanel = new JPanel(new BorderLayout());
+//        statsPanel.setBorder(BorderFactory.createTitledBorder("统计分析"));
+//        statsTextArea.setEditable(false);
+//        statsPanel.add(new JScrollPane(statsTextArea), BorderLayout.CENTER);
+//
+//        panel.add(configPanel, BorderLayout.NORTH);
+//        panel.add(filePanel, BorderLayout.CENTER);
+//        panel.add(progressPanel, BorderLayout.SOUTH);
+//        panel.add(statsPanel, BorderLayout.EAST);
+//
+//        return frame;
+//    }
+//
+//    private static void displayFilePreview(String fileName, String originalContent, String modifiedContent) {
+//        JFrame previewFrame = new JFrame("文件预览 - " + fileName);
+//        previewFrame.setSize(600, 400);
+//        JTextArea previewTextArea = new JTextArea();
+//        previewTextArea.setEditable(false);
+//        previewTextArea.setText("原始内容:\n" + originalContent + "\n\n修改后内容:\n" + modifiedContent);
+//        previewFrame.add(new JScrollPane(previewTextArea));
+//        previewFrame.setVisible(true);
+//    }
+//
+//    private static void processFiles() {
+//        File folder = new File("Z:\\Desktop\\测试\\in");
+//        File[] listOfFiles = folder.listFiles();
+//        if (listOfFiles == null) {
+//            return;
+//        }
+//        int totalFiles = listOfFiles.length;
+//        int processedFiles = 0;
+//        long startTime = System.currentTimeMillis();
+//        for (File file : listOfFiles) {
+//            if (file.isFile()) {
+//                String sourceFile = file.getAbsolutePath();
+//                String outputFile = "Z:\\Desktop\\测试\\out\\modified_" + file.getName();
+//                if (sourceFile.endsWith(".doc")) {
+//                    sourceFile = convertDocToDocx(sourceFile);
+//                }
+//                if (!sourceFile.endsWith(".docx")) {
+//                    continue;
+//                }
+//                try {
+//                    modifyDocument(sourceFile, outputFile);
+//                    processedFiles++;
+//                    updateProgress(processedFiles, totalFiles);
+//                } catch (IOException e) {
+//                    e.printStackTrace();
+//                }
+//            }
+//        }
+//        long endTime = System.currentTimeMillis();
+//        long duration = endTime - startTime;
+//        displayStats(totalFiles, processedFiles, duration);
+//    }
+//
+//    private static void displayStats(int totalFiles, int processedFiles, long duration) {
+//        String stats = "总文件数: " + totalFiles + "\n已处理文件数: " + processedFiles + "\n处理时间: " + duration + " 毫秒\n";
+//        statsTextArea.setText(stats);
+//    }
+//}
 //
 //
 //
@@ -7788,3 +7788,344 @@ public class WordModifier {
 //    }
 //}
 //
+
+
+
+
+package org.example;
+
+import com.aspose.words.SaveFormat;
+import org.apache.poi.xwpf.usermodel.*;
+
+import javax.swing.*;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.event.ListSelectionListener;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.*;
+import java.util.List;
+
+public class WordModifier {
+    private static Map<String, String> configMap = new LinkedHashMap<>();
+
+    private static Map<String, List<String>> aliasToKeysMap = new LinkedHashMap<>();
+    private static Map<String, String> aliasToValueMap = new LinkedHashMap<>();
+
+    private static DefaultTableModel aliasTableModel = new DefaultTableModel(new Object[]{"Alias", "Value"}, 0);
+    private static DefaultTableModel fileTableModel = new DefaultTableModel(new Object[]{"File", "Original Content", "Modified Content"}, 0);
+    private static JProgressBar progressBar = new JProgressBar(0, 100);
+    private static JFrame frame;
+    private static JTable aliasTable;
+    private static JTable fileTable;
+    private static JTextArea wordPreviewTextArea = new JTextArea();
+    private static JTextArea statsTextArea = new JTextArea();
+    private static final String CONFIG_FILE = "Z:\\Desktop\\测试\\模板\\模板.docx";
+    private static final String EQUIVALENT_KEYS_FILE = "Z:\\Desktop\\测试\\模板\\模板2.docx";
+
+    public static void main(String[] args) {
+        // 创建并显示主窗口
+        frame = createMainFrame();
+        frame.setVisible(true);
+
+        // 加载配置文件
+        loadConfigFile(CONFIG_FILE);
+    }
+
+    private static void loadEquivalentKeysFile(String equivalentKeysFile) {
+        try (FileInputStream fis = new FileInputStream(equivalentKeysFile);
+             XWPFDocument doc = new XWPFDocument(fis)) {
+
+            List<XWPFTable> tables = doc.getTables();
+            for (XWPFTable table : tables) {
+                for (XWPFTableRow row : table.getRows()) {
+                    List<XWPFTableCell> cells = row.getTableCells();
+                    if (cells.size() >= 5) {
+                        String alias = cells.get(0).getText().trim();
+                        List<String> keys = new ArrayList<>();
+                        for (int i = 1; i < cells.size() - 1; i++) {
+                            String key = cells.get(i).getText().trim();
+                            if (!key.isEmpty() && !key.equals("-")) {
+                                keys.add(key);
+                            }
+                        }
+                        // Skip this row if no keys were found
+                        if (keys.isEmpty()) {
+                            continue;
+                        }
+                        String value = cells.get(cells.size() - 1).getText().trim();
+                        aliasToKeysMap.put(alias, keys);
+                        aliasToValueMap.put(alias, value);
+                        aliasTableModel.addRow(new Object[]{alias, value});
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("An error occurred while loading the equivalent keys file: " + e.getMessage());
+        }
+    }
+
+    private static void loadConfigFile(String configFile) {
+        try (FileInputStream configFis = new FileInputStream(configFile);
+             XWPFDocument configDoc = new XWPFDocument(configFis)) {
+
+            List<XWPFTable> configTables = configDoc.getTables();
+
+            for (XWPFTable table : configTables) {
+                for (XWPFTableRow row : table.getRows()) {
+                    if (row.getTableCells().size() >= 2) {
+                        XWPFTableCell labelCell = row.getTableCells().get(0);
+                        XWPFTableCell valueCell = row.getTableCells().get(1);
+                        String key = labelCell.getText().trim();
+                        String value = valueCell.getText().trim();
+                        configMap.put(key, value);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        // After loading the original config file, load the equivalent keys file
+        loadEquivalentKeysFile(EQUIVALENT_KEYS_FILE);
+
+        // Merge the equivalent keys into the original config
+        mergeEquivalentKeysToConfig();
+    }
+
+    private static void mergeEquivalentKeysToConfig() {
+        configMap.clear();
+        for (Map.Entry<String, List<String>> entry : aliasToKeysMap.entrySet()) {
+            String alias = entry.getKey();
+            String value = aliasToValueMap.get(alias);
+            for (String key : entry.getValue()) {
+                configMap.put(key, value);
+            }
+        }
+    }
+
+    private static void saveConfigFile(String configFile, Map<String, String> configMap) {
+        try (FileOutputStream fos = new FileOutputStream(configFile);
+             XWPFDocument configDoc = new XWPFDocument()) {
+
+            XWPFTable table = configDoc.createTable();
+            for (Map.Entry<String, String> entry : configMap.entrySet()) {
+                XWPFTableRow row = table.createRow();
+                XWPFTableCell keyCell = row.addNewTableCell();
+                keyCell.setText(entry.getKey());
+
+                XWPFTableCell valueCell = row.addNewTableCell();
+                valueCell.setText(entry.getValue());
+            }
+            configDoc.write(fos);
+        } catch (IOException e) {
+            System.err.println("An error occurred while saving the config file: " + e.getMessage());
+        }
+    }
+
+    private static String convertDocToDocx(String sourceFile) {
+        String docxFile = sourceFile.replace(".doc", ".docx");
+        try {
+            com.aspose.words.Document doc = new com.aspose.words.Document(sourceFile);
+            doc.save(docxFile, SaveFormat.DOCX);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return docxFile;
+    }
+
+    private static void modifyDocument(String sourceFile, String outputFile) throws IOException {
+        try (FileInputStream sourceFis = new FileInputStream(sourceFile);
+             FileOutputStream fos = new FileOutputStream(outputFile);
+             XWPFDocument document = new XWPFDocument(sourceFis)) {
+
+            StringBuilder originalContent = new StringBuilder();
+            StringBuilder modifiedContent = new StringBuilder();
+
+            List<XWPFTable> tables = document.getTables();
+
+            for (XWPFTable table : tables) {
+                for (XWPFTableRow row : table.getRows()) {
+                    for (int i = 0; i < row.getTableCells().size(); i++) {
+                        XWPFTableCell cell = row.getTableCells().get(i);
+                        String text = cell.getText().replaceAll("\\s+", "");
+                        originalContent.append(text).append(" ");
+
+                        if (configMap.containsKey(text)) {
+                            String newValue = configMap.get(text);
+                            modifiedContent.append(newValue).append(" ");
+                            if (i + 1 < row.getTableCells().size() && newValue != null && !newValue.isEmpty()) {
+                                XWPFTableCell nextCell = row.getTableCells().get(i + 1);
+                                nextCell.removeParagraph(0);
+                                XWPFParagraph p = nextCell.addParagraph();
+                                p.setAlignment(ParagraphAlignment.CENTER);
+                                XWPFRun r = p.createRun();
+                                r.setText(newValue);
+                                nextCell.setVerticalAlignment(XWPFTableCell.XWPFVertAlign.CENTER);
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (XWPFParagraph paragraph : document.getParagraphs()) {
+                List<XWPFRun> runs = paragraph.getRuns();
+                for (int i = 0; i < runs.size(); i++) {
+                    XWPFRun run = runs.get(i);
+                    String text = run.getText(0);
+                    if (text != null) {
+                        originalContent.append(text).append(" ");
+                        for (Map.Entry<String, String> entry : configMap.entrySet()) {
+                            String key = entry.getKey();
+                            String value = entry.getValue();
+                            if (text.trim().equals(key)) {
+                                int j = i + 1;
+                                while (j < runs.size()) {
+                                    XWPFRun nextRun = runs.get(j);
+                                    String nextText = nextRun.getText(0);
+                                    if (nextText != null && !nextText.contains(":")) {
+                                        XWPFRun newRun = paragraph.insertNewRun(j + 1);
+                                        newRun.setText(value);
+                                        newRun.setUnderline(UnderlinePatterns.SINGLE);
+                                        newRun.setFontFamily("仿宋_GB2312");
+                                        newRun.setFontSize(14);
+                                        paragraph.removeRun(j);
+                                        break;
+                                    }
+                                    j++;
+                                }
+                                i = j;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            fileTableModel.addRow(new Object[]{sourceFile, originalContent.toString(), modifiedContent.toString()});
+            document.write(fos);
+
+            // 更新文件预览
+            displayWordContent(outputFile);
+        }
+    }
+
+    private static void updateProgress(int processedFiles, int totalFiles) {
+        int progress = (int) ((double) processedFiles / totalFiles * 100);
+        progressBar.setValue(progress);
+    }
+
+    private static JFrame createMainFrame() {
+        JFrame frame = new JFrame("文档处理工具");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setSize(1200, 800);
+
+        JPanel panel = new JPanel(new BorderLayout());
+        frame.add(panel);
+
+        JPanel aliasPanel = new JPanel(new BorderLayout());
+        aliasPanel.setBorder(BorderFactory.createTitledBorder("别名映射"));
+        aliasTable = new JTable(aliasTableModel);
+        aliasPanel.add(new JScrollPane(aliasTable), BorderLayout.CENTER);
+
+        JPanel aliasInputPanel = new JPanel(new GridLayout(1, 3));
+        aliasInputPanel.add(new JLabel("Value:"));
+        JTextField aliasValueField = new JTextField();
+        aliasInputPanel.add(aliasValueField);
+        JButton updateAliasButton = new JButton("更新");
+        updateAliasButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                int selectedRow = aliasTable.getSelectedRow();
+                if (selectedRow != -1) {
+                    String alias = (String) aliasTableModel.getValueAt(selectedRow, 0);
+                    String value = aliasValueField.getText().trim();
+                    if (!value.isEmpty()) {
+                        aliasToValueMap.put(alias, value);
+                        aliasTableModel.setValueAt(value, selectedRow, 1);
+                        mergeEquivalentKeysToConfig();
+                        processFiles();
+                    }
+                }
+            }
+        });
+        aliasInputPanel.add(updateAliasButton);
+        aliasPanel.add(aliasInputPanel, BorderLayout.SOUTH);
+
+        JPanel filePreviewPanel = new JPanel(new BorderLayout());
+        filePreviewPanel.setBorder(BorderFactory.createTitledBorder("文件预览"));
+        wordPreviewTextArea.setEditable(false);
+        filePreviewPanel.add(new JScrollPane(wordPreviewTextArea), BorderLayout.CENTER);
+
+        JPanel progressPanel = new JPanel(new BorderLayout());
+        progressPanel.setBorder(BorderFactory.createTitledBorder("处理进度"));
+        progressPanel.add(progressBar, BorderLayout.CENTER);
+
+        panel.add(aliasPanel, BorderLayout.NORTH);
+        panel.add(filePreviewPanel, BorderLayout.CENTER);
+        panel.add(progressPanel, BorderLayout.SOUTH);
+
+        return frame;
+    }
+
+    private static void displayWordContent(String filePath) {
+        try (FileInputStream fis = new FileInputStream(filePath);
+             XWPFDocument doc = new XWPFDocument(fis)) {
+            StringBuilder content = new StringBuilder();
+
+            for (XWPFParagraph paragraph : doc.getParagraphs()) {
+                content.append(paragraph.getText()).append("\n");
+            }
+
+            for (XWPFTable table : doc.getTables()) {
+                for (XWPFTableRow row : table.getRows()) {
+                    for (XWPFTableCell cell : row.getTableCells()) {
+                        content.append(cell.getText()).append("\t");
+                    }
+                    content.append("\n");
+                }
+                content.append("\n");
+            }
+
+            wordPreviewTextArea.setText(content.toString());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void processFiles() {
+        // 定义输入文件和输出文件列表
+        List<String> inputFiles = Arrays.asList(
+                "Z:\\Desktop\\测试\\输入文件\\input1.docx",
+                "Z:\\Desktop\\测试\\输入文件\\input2.docx"
+        );
+        List<String> outputFiles = Arrays.asList(
+                "Z:\\Desktop\\测试\\输出文件\\output1.docx",
+                "Z:\\Desktop\\测试\\输出文件\\output2.docx"
+        );
+
+        // 重置进度条和文件表
+        progressBar.setValue(0);
+        fileTableModel.setRowCount(0);
+
+        // 遍历处理每个文件
+        for (int i = 0; i < inputFiles.size(); i++) {
+            String inputFile = inputFiles.get(i);
+            String outputFile = outputFiles.get(i);
+
+            try {
+                modifyDocument(inputFile, outputFile);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            // 更新进度条
+            updateProgress(i + 1, inputFiles.size());
+        }
+    }
+}
